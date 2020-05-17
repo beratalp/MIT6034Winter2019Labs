@@ -4,6 +4,7 @@
 from search import Edge, UndirectedGraph, do_nothing_fn, make_generic_search
 import read_graphs
 from functools import reduce
+from collections import deque
 
 all_graphs = read_graphs.get_graphs()
 GRAPH_0 = all_graphs['GRAPH_0']
@@ -23,12 +24,21 @@ def path_length(graph, path):
     (That is, the list of nodes defines a path through the graph.)
     A path with fewer than 2 nodes should have length of 0.
     You can assume that all edges along the path have a valid numeric weight."""
-    raise NotImplementedError
+    if len(path) < 2:
+        return 0
+    sum = 0
+    for i in range(len(path) - 1):
+        sum += graph.get_edge(path[i], path[i+1]).length
+    return sum
 
 def has_loops(path):
     """Returns True if this path has a loop in it, i.e. if it
     visits a node more than once. Returns False otherwise."""
-    raise NotImplementedError
+    path_set = set(path)
+    if len(path_set) == len(path):
+        return False
+    else:
+        return True
 
 def extensions(graph, path):
     """Returns a list of paths. Each path in the list should be a one-node
@@ -36,7 +46,14 @@ def extensions(graph, path):
     by adding a neighbor node (of the final node in the path) to the path.
     Returned paths should not have loops, i.e. should not visit the same node
     twice. The returned paths should be sorted in lexicographic order."""
-    raise NotImplementedError
+    extended_paths = []
+    p = path[-1]
+    neighbors = graph.get_neighbors(p)
+    for n in neighbors:
+        new_path = path + [n]
+        if not has_loops(new_path):
+            extended_paths.append(path + [n])
+    return sorted(extended_paths)
 
 def sort_by_heuristic(graph, goalNode, nodes):
     """Given a list of nodes, sorts them best-to-worst based on the heuristic
@@ -44,7 +61,10 @@ def sort_by_heuristic(graph, goalNode, nodes):
     consider a smaller heuristic value to be "better" because it represents a
     shorter potential path to the goal. Break ties lexicographically by 
     node name."""
-    raise NotImplementedError
+    def heuristic(node):
+        h = graph.get_heuristic_value(node, goalNode)
+        return h + ord(node)/10000000000 # this is probably not the best way to do this, but it works!
+    return sorted(nodes, key=heuristic)
 
 # You can ignore the following line.  It allows generic_search (PART 3) to
 # access the extensions and has_loops functions that you just defined in PART 1.
@@ -60,15 +80,26 @@ def basic_dfs(graph, startNode, goalNode):
     exists, otherwise returning None.
     Uses backtracking, but does not use an extended set.
     """
-    raise NotImplementedError
+    stack = [[startNode]]
+    while len(stack) != 0:
+        top = stack.pop()
+        ext = extensions(graph, top)
+        for e in ext:
+            stack.append(e)
+            if goalNode in stack[len(stack) - 1]:
+                return stack[len(stack) - 1]
+    return None
 
 def basic_bfs(graph, startNode, goalNode):
-    """
-    Performs a breadth-first search on a graph from a specified start
-    node to a specified goal node, returning a path-to-goal if it
-    exists, otherwise returning None.
-    """
-    raise NotImplementedError
+    queue = deque([[startNode]])
+    while len(queue) != 0:
+        first = queue.popleft()
+        ext = extensions(graph, first)
+        for e in ext:
+            queue.append(e)
+            if goalNode in queue[0]:
+                return queue[0]
+    return None
 
 
 #### PART 3: Generic Search ####################################################
@@ -86,23 +117,37 @@ def basic_bfs(graph, startNode, goalNode):
 #     # YOUR CODE HERE
 #     return sorted_paths
 
+def break_ties(paths):
+    return sorted(paths)
 
+def sort_hill_climbing(graph, goalNode, new_paths):
+    def heuristic_length(path):
+        return graph.get_heuristic_value(path[-1], goalNode)
+    return sorted(new_paths, key=heuristic_length)
 
-generic_dfs = [None, None, None, None]
+def sort_branch_and_bound(graph, goalNode, agenda_paths):
+    def total_length(path):
+        length_traversed = 0
+        for i in range(len(path) - 1):
+            length_traversed += graph.get_edge(path[i], path[i+1]).length
+        return length_traversed
+    return sorted(agenda_paths, key=total_length)
 
-generic_bfs = [None, None, None, None]
+generic_dfs = [do_nothing_fn, True, do_nothing_fn, False]
 
-generic_hill_climbing = [None, None, None, None]
+generic_bfs = [do_nothing_fn, False, do_nothing_fn, False]
 
-generic_best_first = [None, None, None, None]
+generic_hill_climbing = [sort_hill_climbing, True, do_nothing_fn, False]
 
-generic_branch_and_bound = [None, None, None, None]
+generic_best_first = [sort_hill_climbing, False, do_nothing_fn, False]
 
-generic_branch_and_bound_with_heuristic = [None, None, None, None]
+generic_branch_and_bound = [do_nothing_fn, False, sort_branch_and_bound, False]
 
-generic_branch_and_bound_with_extended_set = [None, None, None, None]
+generic_branch_and_bound_with_heuristic = [sort_hill_climbing, False, sort_branch_and_bound, False]
 
-generic_a_star = [None, None, None, None]
+generic_branch_and_bound_with_extended_set = [do_nothing_fn, False, sort_branch_and_bound, True]
+
+generic_a_star = [sort_hill_climbing, False, sort_branch_and_bound, True]
 
 
 # Here is an example of how to call generic_search (uncomment to run):
@@ -138,7 +183,11 @@ def is_admissible(graph, goalNode):
     """Returns True if this graph's heuristic is admissible; else False.
     A heuristic is admissible if it is either always exactly correct or overly
     optimistic; it never over-estimates the cost to the goal."""
-    raise NotImplementedError
+    admissable = True
+    for node in graph.nodes:
+        if graph.get_heuristic_value(node, goalNode) > path_length(graph, generic_search(*generic_a_star)(graph, node, goalNode)):
+            admissable = False
+    return admissable
 
 def is_consistent(graph, goalNode):
     """Returns True if this graph's heuristic is consistent; else False.
@@ -149,7 +198,12 @@ def is_consistent(graph, goalNode):
     In other words, moving from one node to a neighboring node never unfairly
     decreases the heuristic.
     This is equivalent to the heuristic satisfying the triangle inequality."""
-    raise NotImplementedError
+    consistent = True
+    for edge in graph.edges:
+        if edge.length < abs(graph.get_heuristic_value(edge.startNode, goalNode) - graph.get_heuristic_value(edge.endNode, goalNode)):
+            consistent = False
+    return consistent
+
 
 
 ### OPTIONAL: Picking Heuristics
@@ -209,13 +263,13 @@ heuristic_4['G']['G'] = h4_G
 
 ##### PART 5: Multiple Choice ##################################################
 
-ANSWER_1 = ''
+ANSWER_1 = '2'
 
-ANSWER_2 = ''
+ANSWER_2 = '4'
 
-ANSWER_3 = ''
+ANSWER_3 = '1'
 
-ANSWER_4 = ''
+ANSWER_4 = '3'
 
 
 #### SURVEY ####################################################################
